@@ -27,7 +27,7 @@ seq_context_length = 100
 
 if __name__ == '__main__':
     args = docopt(__doc__, version='vcf-primer 0.1')
-    print(args)
+    #print(args)
 
     # If running program without pipe, use bcftools to open.
     vcf = Popen(["bcftools","query","-f", "%CHROM\t%POS\t%REF\t%ALT\n", args["<vcf>"]], stdout=PIPE, stderr=PIPE)
@@ -44,8 +44,12 @@ if __name__ == '__main__':
         seq = ''.join(check_output(["samtools","faidx", args["<reference>"], loc]).splitlines()[1:])
         rec["SEQUENCE_TEMPLATE"] = seq
         rec["SEQUENCE_TARGET"] = "%s,%s" % (seq_context_length, len(ref))
-        print '\n'.join(["%s=%s" % (k,v) for k,v in rec.items()])
-        print "="
+        rec["PRIMER_TASK"] = "pick_pcr_primers"
+        rec["PRIMER_MIN_SIZE"] = 18
+        rec["PRIMER_MAX_SIZE"] = 22
+        rec["PRIMER_THERMODYNAMIC_PARAMETERS_PATH"] = "/usr/local/share/primer3_config/" # From homebrew
+        record = '\n'.join(["%s=%s" % (k,v) for k,v in rec.items()]) + "\n="
+        print record
 
 
 
