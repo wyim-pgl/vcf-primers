@@ -25,7 +25,6 @@ class blastn:
 
     def query(self, q):
         blastn_query = "echo {q} | blastn -query - -db={self.db} -outfmt=6 -evalue 1 -word_size=7".format(**locals())
-        print blastn_query
         resp, err = Popen(blastn_query, stdout=PIPE, stderr=PIPE, shell=True).communicate()
 
         if err != "":
@@ -36,7 +35,7 @@ class blastn:
         for i in resp:
             i["query_length"] = i["q_end"] + 1 - i["q_start"]
             i["query_string"] = q[i["q_start"]-1:i["q_end"]]
-
         return resp
 
-#b = blastn("reference/WS245/WS245.fa")
+#blaster = blastn("reference/WS245/WS245.fa")
+#blaster.query("gcctgcctgccaacctatat")
