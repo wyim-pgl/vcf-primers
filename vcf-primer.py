@@ -38,7 +38,7 @@ if __name__ == '__main__':
     reference = args["<reference>"]
 
     # If running program without pipe, use bcftools to open.
-    vcf_comm = ["bcftools","query","-f", "%CHROM\t%POS\t%REF\t%ALT\n", args["<vcf>"]]
+    vcf_comm = ["bcftools","query","--regions", "I:1000-2000", "-f", "%CHROM\t%POS\t%REF\t%ALT\n", args["<vcf>"]]
     vcf = Popen(vcf_comm, stdout=PIPE, stderr=PIPE)
     blaster = blastn(reference)
 
@@ -53,34 +53,26 @@ if __name__ == '__main__':
         end = int(pos) + len(ref) + p.seq_template_length
         p.SEQUENCE_TEMPLATE = faidx(reference, chrom, start, end)
         p.SEQUENCE_TARGET = "%s,%s" % (p.seq_template_length, len(ref))
-        
-        p.fetch_primers()
-
         # Fetch primers
-        for primer in p.primers():
-          print pp(primer)
+        for primer in p.fetch_primers():
+            left_primer  = blaster.blast(primer["PRIMER_LEFT"]["SEQUENCE"]).query_stat()
+            right_primer = blaster.blast(primer["PRIMER_RIGHT"]["SEQUENCE"]).query_stat()
+            
+            interior_primer = primer3("sanger_interior")
+            interior_primer.SEQUENCE_TEMPLATE = primer["PCR_PRODUCT_SEQ"]
+            for int_primer in interior_primer.fetch_primers():
+              int_primer = int_primer["PRIMER_LEFT"]
+              int_primer_seq = int_primer["SEQUENCE"] 
+              int_primer_count = p.SEQUENCE_TEMPLATE.count(int_primer_seq)
+              # If the interior primer is found multiple times - don't use it
+              if int_primer_count > 1:
+                  break
+              #print p.SEQUENCE_ID
+              int_primer_len = int_primer["PRIMER_LENGTH"]
+              seq_start = p.SEQUENCE_TEMPLATE.find(int_primer_seq) + len(int_primer_seq)
+              target_location = p.seq_template_length - seq_start
+              pre_variant = p.SEQUENCE_TEMPLATE[seq_start-1:seq_start + target_location]
+              post_variant = p.SEQUENCE_TEMPLATE[seq_start + target_location+1:seq_start + target_location + 10]
+              sequence_output = "{pre_variant}[{ref}/{alt}]{post_variant}...".format(**locals())
 
-
-        """if "PRIMER_LEFT_NUM_RETURNED" in r:
-
-                                    if left_primer is None or right_primer is None:
-                                      break
-                                    left_primer_blast  = blaster.blast(left_primer).query_stat()
-                                    right_primer_blast = blaster.blast(right_primer).query_stat()
-                        
-                                    # Generate PCR Templates
-                                    left_start, left_length = map(int,r["PRIMER_LEFT_%s" % primer_num].split(","))
-                                    right_start, right_length = map(int,r["PRIMER_RIGHT_%s" % primer_num].split(","))
-                                    r["PCR_PRODUCT_SEQ_%s" % primer_num] = r["SEQUENCE_TEMPLATE"][left_start:right_start+1]
-                                    r["PCR_PRODUCT_LEN_%s" % primer_num] = len(r["SEQUENCE_TEMPLATE"][left_start:right_start+1])
-                        
-                                    # Generate primer for interior
-                                    #rec["SEQUENCE_TEMPLATE"] = r["PCR_PRODUCT_SEQ_%s" % primer_num]
-                                    #rec["SEQUENCE_TARGET"] = 1
-                        
-                                    print pp(r)"""
-
-else:
-  for line in sys.stdin:
-      if line.startswith("#") == False:
-          sys.stdout.write(line)
+              print sequence_output
