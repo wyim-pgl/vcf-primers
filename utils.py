@@ -16,7 +16,8 @@ def autoconvert(s):
     return s
 
 def faidx(ref, chrom, start, end):
+    if start < 0:
+        start = 0
     loc = "{chrom}:{start}-{end}".format(**locals())
     comm = ["samtools", "faidx", ref, loc]
     return ''.join(check_output(comm).splitlines()[1:])
-
