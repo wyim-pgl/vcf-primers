@@ -11,77 +11,67 @@ Options:
   --version     Show version.
 
 """
+
 from docopt import docopt
 import sys
-from pprint import pprint
 from subprocess import Popen, PIPE, check_output
 from pprint import pprint as pp
-from primer3_options import *
 from blastn import *
 from utils import *
+from primer3 import *
 
 # Check that tools are installed
 for tool in ["primer3_core", "blastn", "samtools"]:
   if Popen(["which",tool],stdout=PIPE, stderr=PIPE).communicate()[0] == "":
       raise Exception(tool + " is not installed.")
 
-# Set up rec and defaults
-rec = {"PRIMER_OPT_SIZE":20}
-
-seq_template_length = int(PRIMER_PRODUCT_SIZE_RANGE.split("-")[1]) # Region that primer3_core searches for primers.
+p = primer3("sanger")
 
 if __name__ == '__main__':
     args = docopt(__doc__, version='vcf-primer 0.1')
-    #print(args)
+    
+    reference = args["<reference>"].replace(".gz","")
+    reference_gz = args["<reference>"]
 
     # If running program without pipe, use bcftools to open.
-    vcf = Popen(["bcftools","query","-f", "%CHROM\t%POS\t%REF\t%ALT\n", args["<vcf>"]], stdout=PIPE, stderr=PIPE)
-
-    rec["PRIMER_PRODUCT_SIZE_RANGE"] = PRIMER_PRODUCT_SIZE_RANGE
-    rec["PRIMER_TASK"] = "pick_pcr_primers"
-    rec["PRIMER_MIN_SIZE"] = PRIMER_MIN_SIZE
-    rec["PRIMER_MAX_SIZE"] = PRIMER_MAX_SIZE
-    rec["PRIMER_THERMODYNAMIC_PARAMETERS_PATH"] = "/usr/local/share/primer3_config/" # From homebrew
-
-    blaster = blastn(args["<reference>"].replace(".gz",""))
+    vcf_comm = ["bcftools","query","-f", "%CHROM\t%POS\t%REF\t%ALT\n", args["<vcf>"]]
+    vcf = Popen(vcf_comm, stdout=PIPE, stderr=PIPE)
+    blaster = blastn(reference)
 
     # Calculate variables
-
     for line in vcf.stdout:
-
-        # SEQUENCE_ID; Later make rsid?
+        # SEQUENCE_ID; 
         chrom, pos, ref, alt = line.strip().split("\t")
-        rec["SEQUENCE_ID"] = chrom + "_" + pos
-
+        p.SEQUENCE_ID = chrom + "_" + pos
         # SEQUENCE_TEMPLATE 
-        pos_start = str(int(pos) - seq_template_length)
-        pos_end = str(int(pos) + len(ref) + seq_template_length)
-        loc = "%s:%s-%s" % (chrom, pos_start, pos_end)
-        seq = ''.join(check_output(["samtools","faidx", args["<reference>"], loc]).splitlines()[1:])
-        rec["SEQUENCE_TEMPLATE"] = seq
-        rec["SEQUENCE_TARGET"] = "%s,%s" % (seq_template_length, len(ref))
-        record = '\n'.join(["%s=%s" % (k,v) for k,v in rec.items()]) + "\n="
-        p = Popen(["primer3_core"],stdin=PIPE, stdout=PIPE)
-        resp, err = p.communicate(record)
-        r = dict([x.split("=") for x in resp.strip().split("\n") if x.split("=")[0] != ""])
-        for k,v in r.items():
-          r[k] = autoconvert(v)
+        start = int(pos) - p.seq_template_length
+        end = int(pos) + len(ref) + p.seq_template_length
+        p.SEQUENCE_TEMPLATE = faidx(args["<reference>"], chrom, start, end)
+        p.SEQUENCE_TARGET = "%s,%s" % (p.seq_template_length, len(ref))
 
-        for primer_num in xrange(0,r["PRIMER_LEFT_NUM_RETURNED"]):
-          # Blast primer
-          left_primer = r["PRIMER_LEFT_%s_SEQUENCE" % primer_num]
-          right_primer = r["PRIMER_RIGHT_%s_SEQUENCE" % primer_num]
-          if left_primer is None or right_primer is None:
-            break
-          left_primer_blast = blaster.query(left_primer)
-          right_primer_blast = blaster.query(right_primer)
-          print left_primer_blast["evalue"]
-          # Generate PCR Templates
-          left_start, left_length = map(int,r["PRIMER_LEFT_%s" % primer_num].split(","))
-          right_start, right_length = map(int,r["PRIMER_RIGHT_%s" % primer_num].split(","))
-          r["PCR_PRODUCT_SEQ_%s" % primer_num] = r["SEQUENCE_TEMPLATE"][left_start:right_start+1]
-          r["PCR_PRODUCT_LEN_%s" % primer_num] = len(r["SEQUENCE_TEMPLATE"][left_start:right_start+1])
+        
 
+        if "PRIMER_LEFT_NUM_RETURNED" in r:
+          for primer_num in xrange(0,r["PRIMER_LEFT_NUM_RETURNED"]):
+            # Blast primer
+            left_primer = r["PRIMER_LEFT_%s_SEQUENCE" % primer_num]
+            right_primer = r["PRIMER_RIGHT_%s_SEQUENCE" % primer_num]
+            if left_primer is None or right_primer is None:
+              break
+            left_primer_blast  = blaster.blast(left_primer).query_stat()
+            right_primer_blast = blaster.blast(right_primer).query_stat()
+
+            # Generate PCR Templates
+            left_start, left_length = map(int,r["PRIMER_LEFT_%s" % primer_num].split(","))
+            right_start, right_length = map(int,r["PRIMER_RIGHT_%s" % primer_num].split(","))
+            r["PCR_PRODUCT_SEQ_%s" % primer_num] = r["SEQUENCE_TEMPLATE"][left_start:right_start+1]
+            r["PCR_PRODUCT_LEN_%s" % primer_num] = len(r["SEQUENCE_TEMPLATE"][left_start:right_start+1])
+
+            # Generate primer for interior
+            #rec["SEQUENCE_TEMPLATE"] = r["PCR_PRODUCT_SEQ_%s" % primer_num]
+            #rec["SEQUENCE_TARGET"] = 1
+
+            print pp(r)
 
 else:
   for line in sys.stdin:
