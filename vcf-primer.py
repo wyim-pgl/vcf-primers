@@ -38,7 +38,7 @@ if __name__ == '__main__':
     reference = args["<reference>"]
 
     # If running program without pipe, use bcftools to open.
-    vcf_comm = ["bcftools","query","--regions", "I:1000-2000", "-f", "%CHROM\t%POS\t%REF\t%ALT\n", args["<vcf>"]]
+    vcf_comm = ["bcftools","query", "-f", "%CHROM\t%POS\t%REF\t%ALT\n", args["<vcf>"]]
     vcf = Popen(vcf_comm, stdout=PIPE, stderr=PIPE)
     blaster = blastn(reference)
 
